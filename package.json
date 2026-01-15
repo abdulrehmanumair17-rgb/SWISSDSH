@@ -9,11 +9,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react-dom": "^19.2.3",
     "react": "^19.2.3",
+    "react-dom": "^19.2.3",
     "@google/genai": "^1.34.0",
     "recharts": "^3.6.0",
-    "xlsx": "0.18.5"
+    "xlsx": "0.18.5",
+    "./App.tsx": "latest",
+    "./types.ts": "latest",
+    "./components/Layout.tsx": "latest",
+    "./components/Dashboard.tsx": "latest",
+    "./components/DataEntry.tsx": "latest",
+    "./services/geminiService.ts": "latest",
+    "./services/dbService.ts": "latest"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
