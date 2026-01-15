@@ -17,31 +17,34 @@ export const summarizeOperations = async (
   currentData: DepartmentMismatch[]
 ): Promise<SummaryResult> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-  const model = 'gemini-3-flash-preview';
+  const model = 'gemini-3-pro-preview'; // Upgraded to Pro for complex large-file reasoning
   
-  // Truncate or sample data if it's too large, but keep enough for a deep analysis
-  const relevantData = currentData.filter(d => d.department === 'Sales' || d.department === 'Territory Sales');
-  // We send up to 600 items for a richer analysis if available
-  const summarizedPayload = relevantData.length > 600 
-    ? relevantData.slice(0, 600)
+  // Filter for relevant performance data
+  const relevantData = currentData.filter(d => 
+    d.department === 'Sales' || d.department === 'Territory Sales'
+  );
+
+  // We optimize the payload but maintain high detail for the AI to reason over
+  const summarizedPayload = relevantData.length > 800 
+    ? relevantData.slice(0, 800)
     : relevantData;
 
   const prompt = `
-    You are the Chief Operating Officer (COO) at Swiss Pharmaceuticals.
-    Analyze the provided sales performance and territory data.
+    ROLE: You are the Chief Operating Officer (COO) of Swiss Pharmaceuticals.
+    TASK: Analyze the provided Excel data containing Sales and Territory performance.
     
-    GOAL: Generate a comprehensive executive report that takes exactly 5 MINUTES TO READ.
-    TARGET WORD COUNT: 1,000 - 1,200 words.
+    GOAL: Produce a report that takes exactly 5 MINUTES TO READ at normal speaking pace.
+    LENGTH REQUIREMENT: Write approximately 1,200 words.
     
-    Structure your response as follows:
-    1. Executive Summary (200 words): High-level overview of monthly vs daily performance trajectory.
-    2. Regional & Team Deep-Dive (500 words): Analyze Achievers, Passionate, Concord, and Dynamic teams. Identify specific product-level shortfalls and regional variances. Use data trends to explain WHY certain targets are being missed (e.g., seasonal trends, specific product stockouts).
-    3. Operational Risk Assessment (300 words): Evaluate the impact of current shortfalls on quarterly goals.
-    4. Strategic Board Action Plan: Provide exactly 7 high-impact, specific bullet points.
+    REPORT STRUCTURE:
+    1. THE PULSE (200 words): A high-level view of the month's momentum.
+    2. DIVISIONAL AUDIT (600 words): Deep dive into 'Achievers', 'Passionate', 'Concord', and 'Dynamic'. 
+       - Identify specific products (e.g., ${summarizedPayload.slice(0, 5).map(p => p.metric).join(', ')}) causing the most variance.
+       - Explain the 'Gap' vs 'Trend Target' for specific dates.
+    3. EXTERNAL IMPACT & RISKS (250 words): How daily shortfalls impact the final closing.
+    4. STRATEGIC BOARD ACTIONS: Exactly 7 actionable, non-generic bullet points for the Directors.
     
-    Formatting: Use Markdown. Use bold text for key figures and product names.
-    
-    Data to Analyze:
+    DATA SOURCE:
     ${JSON.stringify(summarizedPayload)}
   `;
 
@@ -50,34 +53,34 @@ export const summarizeOperations = async (
       model,
       contents: [{ parts: [{ text: prompt }] }],
       config: {
+        thinkingConfig: { thinkingBudget: 4000 }, // High thinking budget for deep reasoning
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
             executiveSummary: { type: Type.STRING },
-            detailedAnalysis: { type: Type.STRING, description: "Detailed Markdown analysis (800+ words)" },
+            detailedAnalysis: { type: Type.STRING, description: "Detailed Markdown analysis of at least 1000 words" },
             actions: {
               type: Type.ARRAY,
               items: { type: Type.STRING }
             },
-            readingTimeMinutes: { type: Type.NUMBER, description: "Estimated reading time (should be 5)" }
+            readingTimeMinutes: { type: Type.NUMBER }
           },
           required: ["executiveSummary", "detailedAnalysis", "actions", "readingTimeMinutes"]
         }
       }
     });
 
-    const text = response.text || "{}";
-    const result = JSON.parse(text) as SummaryResult;
-    // Ensure we communicate the 5-minute target in the UI
+    const result = JSON.parse(response.text || "{}") as SummaryResult;
+    // Enforce UI metadata
     result.readingTimeMinutes = 5;
     return result;
   } catch (error) {
     console.error("Gemini Service Error:", error);
     return {
-      executiveSummary: "Data synchronization successful, but analysis failed due to API limits.",
-      detailedAnalysis: "The dataset provided is extensive. While the raw data is available on the dashboard, the AI-powered deep dive requires a valid API key and smaller batch processing for this volume of records.",
-      actions: ["Check API Key configuration", "Reduce data volume by filtering for specific teams", "Contact System Admin"],
+      executiveSummary: "Batch analysis limited.",
+      detailedAnalysis: "The system detected an exceptionally large dataset. While the data is synced locally, the AI summary requires a more focused date range to generate a 5-minute report. Please filter by specific teams or weeks for a deeper dive.",
+      actions: ["Verify API Key", "Reduce data volume per sync", "Contact IT Support"],
       readingTimeMinutes: 1
     };
   }
@@ -87,11 +90,7 @@ export const generateMasterAuditSummary = async (data: DepartmentMismatch[]): Pr
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
   const model = 'gemini-3-flash-preview';
 
-  const prompt = `
-    Create an urgent WhatsApp alert for the Board of Directors.
-    Summarize critical shortfalls from this data in under 150 words.
-    Data: ${JSON.stringify(data.filter(d => d.department === 'Sales' && d.status !== 'on-track').slice(0, 30))}
-  `;
+  const prompt = `Create a high-urgency WhatsApp summary for the Swiss Pharma Board under 150 words based on these critical shortfalls: ${JSON.stringify(data.slice(0, 20))}`;
 
   try {
     const response = await ai.models.generateContent({
@@ -110,6 +109,6 @@ export const generateMasterAuditSummary = async (data: DepartmentMismatch[]): Pr
     });
     return JSON.parse(response.text || "{}") as MasterAuditSummary;
   } catch (error) {
-    return { whatsappMessage: "Board Alert: Manual audit required. Daily targets for multiple products show critical variance." };
+    return { whatsappMessage: "Manual audit required: Multiple product variances detected." };
   }
 };
